@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       app_url:
-        description: "Public HTTPS URL of the deployed AI Unlimited website (including https://)"
-        required: true
+        description: "Public HTTPS URL of the deployed AI Unlimited website"
+        required: false
+        default: "https://ai-unlimited-0-4191.vercel.app"
         type: string
 
 permissions:
@@ -38,7 +39,7 @@ jobs:
 
       - name: Add Android platform
         env:
-          APP_URL: ${{ inputs.app_url }}
+          APP_URL: ${{ inputs.app_url || 'https://ai-unlimited-0-4191.vercel.app' }}
         run: npx cap add android
 
       - name: Build debug APK
