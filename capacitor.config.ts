@@ -3,8 +3,8 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const appUrl = process.env.APP_URL;
 
 const config: CapacitorConfig = {
-  appId: "com.aiunlimited.app",
-  appName: "AI Unlimited",
+  appId: "com.aiunlimited.pro",
+  appName: "AI Unlimited Pro",
   webDir: "www",
   server: appUrl
     ? {
@@ -15,6 +15,12 @@ const config: CapacitorConfig = {
     : undefined,
   android: {
     allowMixedContent: false,
+  },
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 2000,
+      backgroundColor: "#07080d",
+    },
   },
 };
 

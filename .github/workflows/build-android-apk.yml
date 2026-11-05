@@ -1,59 +1,78 @@
-name: Build Android APK (triggered)
+name: Build Android APK
 
 on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "رابط الموقع المنشور (Vercel)"
+        required: true
+        default: "https://ai-unlimited-tau.vercel.app"
+        type: string
   push:
     branches: [main]
     paths:
       - ".github/workflows/build-android-apk.yml"
-  workflow_dispatch:
-    inputs:
-      app_url:
-        description: "Public HTTPS URL of the deployed AI Unlimited website"
-        required: false
-        default: "https://ai-unlimited-0-4191.vercel.app"
-        type: string
+      - "capacitor.config.ts"
 
 permissions:
   contents: read
 
 jobs:
   build-apk:
-    name: Build installable Android APK
+    name: Build Installable APK
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Set up Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
 
-      - name: Install web project dependencies
-        run: npm install
-
-      - name: Install Capacitor Android tools
-        run: npm install --no-save @capacitor/core@^7 @capacitor/cli@^7 @capacitor/android@^7
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install --no-save @capacitor/core@^7 @capacitor/cli@^7 @capacitor/android@^7
 
       - name: Add Android platform
         env:
-          APP_URL: ${{ inputs.app_url || 'https://ai-unlimited-0-4191.vercel.app' }}
-        run: npx cap add android
+          APP_URL: ${{ inputs.app_url || 'https://ai-unlimited-tau.vercel.app' }}
+        run: |
+          npx cap add android
+          node -e "
+            const fs = require('fs');
+            const config = {
+              appId: 'com.aiunlimited.pro',
+              appName: 'AI Unlimited Pro',
+              webDir: 'www',
+              server: {
+                url: process.env.APP_URL,
+                cleartext: false,
+                androidScheme: 'https'
+              },
+              android: { allowMixedContent: false }
+            };
+            fs.writeFileSync('capacitor.config.json', JSON.stringify(config, null, 2));
+          "
+          npx cap sync android
 
-      - name: Build debug APK
+      - name: Build Debug APK
         working-directory: android
-        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-unlimited-android-apk
+          name: AI-Unlimited-Pro-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
