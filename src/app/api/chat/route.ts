@@ -6,7 +6,9 @@ export const maxDuration = 60;
 
 type ChatMessage = {
   role: "user" | "assistant" | "system";
-  content: string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+  content:
+    | string
+    | Array<{ type: string; text?: string; image_url?: { url: string } }>;
 };
 
 export async function POST(req: NextRequest) {
@@ -28,22 +30,30 @@ export async function POST(req: NextRequest) {
     if (!apiKey) {
       return new Response(
         JSON.stringify({
-          error: `مفتاح ${provider.name} غير موجود. أضفه في متغيرات البيئة.`,
+          error: `مفتاح ${provider.name} غير موجود. أضف ${provider.apiKeyEnv} في إعدادات Vercel.`,
+          provider: provider.name,
+          envKey: provider.apiKeyEnv,
         }),
         { status: 503, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    };
+
+    if (provider.name === "OpenRouter") {
+      headers["HTTP-Referer"] =
+        process.env.NEXT_PUBLIC_APP_URL || "https://ai-unlimited.app";
+      headers["X-Title"] = "AI Unlimited Pro";
     }
 
     const response = await fetch(
       `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://ai-unlimited.app",
-          "X-Title": "AI Unlimited Pro",
-        },
+        headers,
         body: JSON.stringify({
           model: modelId,
           messages,
@@ -58,9 +68,13 @@ export async function POST(req: NextRequest) {
       return new Response(
         JSON.stringify({
           error: `خطأ من ${provider.name}: ${response.status}`,
-          detail: errText.slice(0, 400),
+          detail: errText.slice(0, 500),
+          model: modelId,
         }),
-        { status: response.status, headers: { "Content-Type": "application/json" } }
+        {
+          status: response.status,
+          headers: { "Content-Type": "application/json" },
+        }
       );
     }
 
