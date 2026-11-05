@@ -1,46 +1,95 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getProviders } from "@/lib/providers";
+import { NextRequest } from "next/server";
+import { getProviderForModel } from "@/lib/ai/providers";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
+
+type ChatMessage = {
+  role: "user" | "assistant" | "system";
+  content:
+    | string
+    | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+};
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const messages = body.messages as ChatMessage[];
-    if (!Array.isArray(messages) || !messages.length) {
-      return NextResponse.json({ error: "الرسائل غير صالحة." }, { status: 400 });
+    const modelId = body.model || "llama-3.3-70b-versatile";
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return new Response(JSON.stringify({ error: "الرسائل غير صالحة" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
-    const providers = getProviders();
-    if (!providers.length) {
-      return NextResponse.json({ error: "لم يتم إعداد أي مزود. أضف مفاتيح API في إعدادات الاستضافة." }, { status: 503 });
+
+    const provider = getProviderForModel(modelId);
+    const apiKey = process.env[provider.apiKeyEnv];
+
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({
+          error: `مفتاح ${provider.name} غير موجود. أضف ${provider.apiKeyEnv} في إعدادات Vercel.`,
+          provider: provider.name,
+          envKey: provider.apiKeyEnv,
+        }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      );
     }
-    const failures: string[] = [];
-    for (const provider of providers) {
-      const key = process.env[provider.apiKeyEnv];
-      if (!key) continue;
-      try {
-        const response = await fetch(`${provider.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: provider.model, messages, temperature: 0.7 }),
-          signal: AbortSignal.timeout(45000)
-        });
-        if (!response.ok) {
-          const detail = await response.text().catch(() => "");
-          failures.push(`${provider.name}: HTTP ${response.status}`);
-          if ([408,429,500,502,503,504].includes(response.status)) continue;
-          return NextResponse.json({ error: `تعذر الاتصال بمزود ${provider.name}.`, detail: detail.slice(0,500) }, { status: 502 });
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    };
+
+    if (provider.name === "OpenRouter") {
+      headers["HTTP-Referer"] =
+        process.env.NEXT_PUBLIC_APP_URL || "https://ai-unlimited.app";
+      headers["X-Title"] = "AI Unlimited Pro";
+    }
+
+    const response = await fetch(
+      `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: modelId,
+          messages,
+          temperature: 0.7,
+          stream: true,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      return new Response(
+        JSON.stringify({
+          error: `خطأ من ${provider.name}: ${response.status}`,
+          detail: errText.slice(0, 500),
+          model: modelId,
+        }),
+        {
+          status: response.status,
+          headers: { "Content-Type": "application/json" },
         }
-        const data = await response.json();
-        const content = data?.choices?.[0]?.message?.content;
-        if (typeof content !== "string" || !content.trim()) { failures.push(provider.name + ": empty response"); continue; }
-        return NextResponse.json({ content, provider: provider.name, model: provider.model });
-      } catch (e) { failures.push(`${provider.name}: ${(e as Error).message}`); }
+      );
     }
-    return NextResponse.json({ error: "تعذر الحصول على رد من جميع المزودين.", attempted: failures }, { status: 503 });
-  } catch {
-    return NextResponse.json({ error: "حدث خطأ أثناء معالجة الطلب." }, { status: 500 });
+
+    return new Response(response.body, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  } catch (error) {
+    console.error("Chat API error:", error);
+    return new Response(
+      JSON.stringify({ error: "حدث خطأ أثناء معالجة الطلب" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 }
